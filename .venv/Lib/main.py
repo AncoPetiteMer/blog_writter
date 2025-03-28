@@ -816,7 +816,8 @@ def generate_enhanced_seo_blog(
     Returns:
         Result dictionary with blog content and metadata
     """
-    logger.info(f"Generating enhanced SEO blog for topic: '{topic}' in {language}")
+    logger.warning("\n" + "*" * 60 + "\n" + "*********************  START  *********************" + "\n" + "*" * 60)
+    logger.info(f"\n📌 Generating enhanced SEO blog\n→ Topic: '{topic}'\n→ Language: {language}\n")
 
     # Prepend language preference to topic if not English
     topic_with_lang = topic
