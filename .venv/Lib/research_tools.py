@@ -4,7 +4,7 @@ import logging
 from typing import List
 
 logger = logging.getLogger("seo_blog_tools")
-
+#TODO: make advanced query to get tpics from last week
 def search_with_tavily(topic: str) -> List[str]:
     """Recherche de mots-clés avec Tavily à partir du topic."""
     try:
@@ -17,7 +17,7 @@ def search_with_tavily(topic: str) -> List[str]:
     except Exception as e:
         logger.warning(f"Tavily error: {e}")
         return []
-
+#TODO: make advanced query to get context of last week topic
 def search_with_wikipedia(topic: str, lang: str = "en") -> List[str]:
     """Mots-clés SEO extraits d’un résumé Wikipedia."""
     try:

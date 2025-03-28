@@ -10,12 +10,16 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from IPython.display import Image, display
 from dotenv import load_dotenv
+from research_tools import search_with_tavily, search_with_wikipedia, search_with_exa
+
 
 
 # Set your OpenAI API key
 load_dotenv()
 os.environ["OPENAI_API_KEY"] = os.getenv('OPENAI_API_KEY')
 os.environ["TAVILY_API_KEY"] = os.getenv('API_KEY_TVLY')
+os.environ["EXA_API_KEY"] = os.getenv('EXA_API_KEY')
+os.environ["SEMRUSH_API_KEY"] = os.getenv('SEMRUSH_API_KEY')
 
 # Enhanced logger
 logger = logging.getLogger("seo_blog")
@@ -312,7 +316,7 @@ def finalize_blog(state: BlogState) -> BlogState:
       - Proper indentation
       - Appropriate <div> containers for sections
       - <header>, <main>, <footer> structural elements
-
+ 
     3. Content optimization:
       - Add a compelling introduction and conclusion if they're not strong enough
       - Ensure smooth transitions between sections
