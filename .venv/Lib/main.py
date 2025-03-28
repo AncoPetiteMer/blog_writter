@@ -76,37 +76,68 @@ def extract_json(content: str) -> Any:
         return {} if content.strip().startswith('{') else []
 
 def keyword_research(state: BlogState) -> BlogState:
-    """Generate SEO keywords based on the topic."""
+    """Generate SEO keywords based on the topic using LLM and Semrush API."""
     topic = state.get("topic", "")
     logger.info(f"Starting keyword research for topic: '{topic}'")
 
     if not topic:
         return {"keywords": ["no-topic-provided"], "debug_info": {"stage": "keyword_research", "status": "error"}}
 
-    system_prompt = f"You are an SEO expert. Generate keywords for: {topic}"
-    prompt = f"""
-    Generate 2-3 relevant SEO keywords for: "{topic}"
-    Return ONLY a JSON array of strings.
-    Example: ["keyword 1", "keyword 2", "keyword 3"]
-    """
+    semrush_keywords = []
+    try:
+        import requests
+        semrush_api_key = os.getenv("SEMRUSH_API_KEY")
+        response = requests.get(
+            "https://api.semrush.com/",
+            params={
+                "type": "phrase_related",
+                "key": semrush_api_key,
+                "phrase": topic,
+                "database": "us",
+                "export_columns": "Ph",
+                "display_limit": 3,
+                "output": "json"
+            }
+        )
+        if response.ok:
+            semrush_data = response.json()
+            semrush_keywords = [item["Ph"] for item in semrush_data.get("data", [])]
+            logger.info(f"SEMRush keywords: {semrush_keywords}")
+    except Exception as e:
+        logger.warning(f"SEMRush API failed: {e}")
 
     try:
-        response = call_llm(prompt, system_prompt)
-        keywords = extract_json(response)
-        logger.info(f"Generated keywords: {keywords}")
+        system_prompt = f"You are an SEO expert. Generate keywords for: {topic}"
+        prompt = f"""
+        Generate 2-3 relevant SEO keywords for: "{topic}"
+        Return ONLY a JSON array of strings.
+        Example: ["keyword 1", "keyword 2", "keyword 3"]
+        """
+        llm_response = call_llm(prompt, system_prompt)
+        llm_keywords = extract_json(llm_response)
+        combined_keywords = list(set(llm_keywords + semrush_keywords))[:5]
+        logger.info(f"Combined keywords: {combined_keywords}")
         return {
-            "keywords": keywords,
-            "debug_info": {"stage": "keyword_research", "status": "success", "keywords": keywords}
+            "keywords": combined_keywords,
+            "debug_info": {
+                "stage": "keyword_research",
+                "status": "success",
+                "keywords": combined_keywords
+            }
         }
     except Exception as e:
-        logger.error(f"Error: {str(e)}")
-        # Simple fallback keywords
-        fallback_keywords = [f"{topic} best practices", f"{topic} guide",
-                             f"{topic} tips", f"{topic} examples"]
+        logger.error(f"LLM error: {str(e)}")
+        fallback_keywords = semrush_keywords or [f"{topic} best practices", f"{topic} guide",
+                                                 f"{topic} tips", f"{topic} examples"]
         return {
             "keywords": fallback_keywords,
-            "debug_info": {"stage": "keyword_research", "status": "fallback", "keywords": fallback_keywords}
+            "debug_info": {
+                "stage": "keyword_research",
+                "status": "fallback",
+                "keywords": fallback_keywords
+            }
         }
+
 
 
 def create_outline(state: BlogState) -> BlogState:
