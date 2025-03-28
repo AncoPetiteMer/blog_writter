@@ -77,34 +77,42 @@ def extract_json(content: str) -> Any:
 
 def keyword_research(state: BlogState) -> BlogState:
     """Generate SEO keywords based on the topic using LLM and Semrush API."""
+    import csv
+    import io
+
     topic = state.get("topic", "")
     logger.info(f"Starting keyword research for topic: '{topic}'")
 
     if not topic:
-        return {"keywords": ["no-topic-provided"], "debug_info": {"stage": "keyword_research", "status": "error"}}
+        return {
+            "keywords": ["no-topic-provided"],
+            "debug_info": {"stage": "keyword_research", "status": "error"}
+        }
 
     semrush_keywords = []
     try:
         import requests
         semrush_api_key = os.getenv("SEMRUSH_API_KEY")
-        response = requests.get(
-            "https://api.semrush.com/",
-            params={
-                "type": "phrase_related",
-                "key": semrush_api_key,
-                "phrase": topic,
-                "database": "us",
-                "export_columns": "Ph",
-                "display_limit": 3,
-                "output": "json"
-            }
-        )
+        params = {
+            "type": "phrase_related",
+            "key": semrush_api_key,
+            "phrase": topic,
+            "database": "us",
+            "export_columns": "Ph",
+            "display_limit": 5,
+        }
+        response = requests.get("https://api.semrush.com/", params=params)
+
         if response.ok:
-            semrush_data = response.json()
-            semrush_keywords = [item["Ph"] for item in semrush_data.get("data", [])]
+            reader = csv.reader(io.StringIO(response.text), delimiter=';')
+            next(reader, None)  # skip header row
+            semrush_keywords = [row[0] for row in reader if row and row[0]]
             logger.info(f"SEMRush keywords: {semrush_keywords}")
+        else:
+            logger.warning(f"SEMRush API returned non-OK: {response.status_code} - {response.text}")
+
     except Exception as e:
-        logger.warning(f"SEMRush API failed: {e}")
+        logger.error(f"SEMRush API error: {e}", exc_info=True)
 
     try:
         system_prompt = f"You are an SEO expert. Generate keywords for: {topic}"
@@ -126,9 +134,8 @@ def keyword_research(state: BlogState) -> BlogState:
             }
         }
     except Exception as e:
-        logger.error(f"LLM error: {str(e)}")
-        fallback_keywords = semrush_keywords or [f"{topic} best practices", f"{topic} guide",
-                                                 f"{topic} tips", f"{topic} examples"]
+        logger.error(f"LLM error: {str(e)}", exc_info=True)
+        fallback_keywords = semrush_keywords or [f"{topic} best practices", f"{topic} guide", f"{topic} tips"]
         return {
             "keywords": fallback_keywords,
             "debug_info": {
@@ -137,6 +144,7 @@ def keyword_research(state: BlogState) -> BlogState:
                 "keywords": fallback_keywords
             }
         }
+
 
 
 
