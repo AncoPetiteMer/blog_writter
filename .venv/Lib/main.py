@@ -1,18 +1,14 @@
-import os
-from datetime import datetime
-from typing import Dict, List, Any, TypedDict, Callable
 import json
+import os
 import re
 import requests
-import logging
-from openai import OpenAI
-from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
 from IPython.display import Image, display
+from config_loader import Config, load_config
+from datetime import datetime
 from dotenv import load_dotenv
+from langgraph.graph import StateGraph, END
 from research_tools import search_with_tavily, search_with_wikipedia, search_with_exa
-
-
+from typing import Dict, List, Any, TypedDict, Optional
 
 # Set your OpenAI API key
 load_dotenv()
@@ -21,9 +17,13 @@ os.environ["TAVILY_API_KEY"] = os.getenv('API_KEY_TVLY')
 os.environ["EXA_API_KEY"] = os.getenv('EXA_API_KEY')
 os.environ["SEMRUSH_API_KEY"] = os.getenv('SEMRUSH_API_KEY')
 
+# Load config file
+my_config = load_config()
 # Logger
 from logger_config import get_logger
+
 logger = get_logger("seo_blog")
+
 
 # Define our state
 class BlogState(TypedDict):
@@ -37,11 +37,20 @@ class BlogState(TypedDict):
     metadata: Dict[str, Any]
     debug_info: Dict[str, Any]  # Added for debugging
 
-# Initialize OpenAI client
-client = OpenAI()
 
-def call_llm(prompt: str, system_prompt: str = None, temperature: float = 0.7) -> str:
-    """Helper function to call the OpenAI API directly."""
+# Ajout d'une config globale fallback
+#GLOBAL_CONFIG = load_config()
+
+
+def call_llm(prompt: str, system_prompt: str = None, temperature: Optional[float] = None,
+             config: Optional[Config] = None) -> str:
+    """Helper function to call the OpenAI API directly with fallback config."""
+    cfg = config or GLOBAL_CONFIG
+
+    # Priorité : temperature de l’appel > config > fallback
+    temp = temperature if temperature is not None else cfg.llm.temperature
+    model = cfg.llm.model
+
     messages = []
 
     if system_prompt:
@@ -49,13 +58,17 @@ def call_llm(prompt: str, system_prompt: str = None, temperature: float = 0.7) -
 
     messages.append({"role": "user", "content": prompt})
 
+    from openai import OpenAI
+    client = OpenAI()
+
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=model,
         messages=messages,
-        temperature=temperature
+        temperature=temp
     )
 
     return response.choices[0].message.content
+
 
 def extract_json(content: str) -> Any:
     """Extract JSON from a string response."""
@@ -70,6 +83,7 @@ def extract_json(content: str) -> Any:
         logger.error(f"Content was: {content}")
         # Return empty dict or list as fallback
         return {} if content.strip().startswith('{') else []
+
 
 def keyword_research(state: BlogState) -> BlogState:
     """Generate SEO keywords based on the topic using LLM and Semrush API."""
@@ -87,15 +101,15 @@ def keyword_research(state: BlogState) -> BlogState:
 
     semrush_keywords = []
     try:
-        import requests
+
         semrush_api_key = os.getenv("SEMRUSH_API_KEY")
         params = {
             "type": "phrase_related",
             "key": semrush_api_key,
             "phrase": topic,
-            "database": "us",
+            "database": my_config.semrush.database,
             "export_columns": "Ph",
-            "display_limit": 5,
+            "display_limit": my_config.semrush.display_limit,
         }
         response = requests.get("https://api.semrush.com/", params=params)
 
@@ -117,7 +131,7 @@ def keyword_research(state: BlogState) -> BlogState:
         Return ONLY a JSON array of strings.
         Example: ["keyword 1", "keyword 2", "keyword 3"]
         """
-        llm_response = call_llm(prompt, system_prompt)
+        llm_response = call_llm(prompt, system_prompt, config=my_config)
         llm_keywords = extract_json(llm_response)
         combined_keywords = list(set(llm_keywords + semrush_keywords))[:5]
         logger.info(f"Combined keywords: {combined_keywords}")
@@ -140,8 +154,6 @@ def keyword_research(state: BlogState) -> BlogState:
                 "keywords": fallback_keywords
             }
         }
-
-
 
 
 def create_outline(state: BlogState) -> BlogState:
@@ -176,20 +188,21 @@ Return a JSON array of objects with this format:
 ]
     """
 
-    response = call_llm(prompt)
+    response = call_llm(prompt, config=my_config)
     outline = extract_json(response)
 
     # Print the outline for testing
     logger.info("Blog outline created:")
     for i, section in enumerate(outline):
         subsections = ", ".join(section.get("subsections", []))
-        logger.info(f"  Section {i+1}: {section['title']} - Subsections: {subsections if subsections else 'None'}")
+        logger.info(f"  Section {i + 1}: {section['title']} - Subsections: {subsections if subsections else 'None'}")
 
     return {
         "outline": outline,
         "current_section": 0,
         "sections_content": {},
-        "debug_info": {"stage": "create_outline", "status": "success", "outline_summary": [section["title"] for section in outline]}
+        "debug_info": {"stage": "create_outline", "status": "success",
+                       "outline_summary": [section["title"] for section in outline]}
     }
 
 
@@ -204,7 +217,7 @@ def write_section(state: BlogState) -> BlogState:
     previous_context = ""
     for i in range(current_section):
         if i in state["sections_content"]:
-            previous_context += f"Section {i+1}: {state['sections_content'][i]}\n\n"
+            previous_context += f"Section {i + 1}: {state['sections_content'][i]}\n\n"
 
     # Perform Tavily search for this specific section
     from tavily import TavilyClient
@@ -214,10 +227,12 @@ def write_section(state: BlogState) -> BlogState:
 
     tavily_results = tavily_client.search(
         query=search_query,
-        search_depth="advanced",
-        max_results=3
+        search_depth=my_config.tavily.search_depth,
+        max_results=my_config.tavily.max_results
     )
-    logger.info(f"  Tavily search results for writtings @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ {tavily_results} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+
+    logger.info(
+        f"  Tavily search results for writtings @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ {tavily_results} @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
     # Extract sources and content from Tavily results
     sources = [{"title": result.get("title", ""), "url": result.get("url", "")}
                for result in tavily_results.get("results", [])]
@@ -256,7 +271,7 @@ def write_section(state: BlogState) -> BlogState:
     """
 
     # Generate content with HTML formatting
-    section_content = call_llm(prompt)
+    section_content = call_llm(prompt, config=my_config)
 
     # Add sources at the end with HTML formatting
     if sources:
@@ -288,6 +303,7 @@ def write_section(state: BlogState) -> BlogState:
         }
     }
 
+
 def should_continue_writing(state: BlogState) -> str:
     """Decide if we should continue writing sections or finalize the blog."""
     current = state["current_section"]
@@ -300,6 +316,7 @@ def should_continue_writing(state: BlogState) -> str:
     else:
         return "finalize"
 
+
 def finalize_blog(state: BlogState) -> BlogState:
     """Combine all sections and optimize the final blog post."""
     logger.info("Finalizing blog post")
@@ -309,9 +326,9 @@ def finalize_blog(state: BlogState) -> BlogState:
     for i, section in enumerate(state["outline"]):
         if i in state["sections_content"]:
             content_len = len(state["sections_content"][i])
-            logger.info(f"  Section {i+1}: {section['title']} - {content_len} characters")
+            logger.info(f"  Section {i + 1}: {section['title']} - {content_len} characters")
         else:
-            logger.info(f"  Section {i+1}: {section['title']} - MISSING CONTENT")
+            logger.info(f"  Section {i + 1}: {section['title']} - MISSING CONTENT")
 
     sections_content = state["sections_content"]
     all_content = ""
@@ -320,10 +337,11 @@ def finalize_blog(state: BlogState) -> BlogState:
         if i in sections_content:
             all_content += sections_content[i] + "\n\n"
         else:
-            logger.warning(f"Missing content for section {i+1}")
+            logger.warning(f"Missing content for section {i + 1}")
 
     keywords_str = ", ".join(state["keywords"])
-    logger.info(f"Le contenu finale est: ###############################{all_content} ########################################")
+    logger.info(
+        f"Le contenu finale est: ###############################{all_content} ########################################")
     final_prompt = f"""
     You are an SEO editor and HTML formatter. Optimize this blog post for readability, SEO, and proper HTML structure.
 
@@ -368,7 +386,7 @@ def finalize_blog(state: BlogState) -> BlogState:
       Begin with <!DOCTYPE html> and include all necessary HTML structure.
     """
 
-    final_blog = call_llm(final_prompt)
+    final_blog = call_llm(final_prompt, config=my_config)
 
     logger.info(f"Final blog post created with {len(final_blog)} characters")
 
@@ -393,7 +411,7 @@ Return a JSON object with these fields:
 }}
     """
 
-    metadata_response = call_llm(meta_prompt)
+    metadata_response = call_llm(meta_prompt, config=my_config)
     metadata = extract_json(metadata_response)
 
     logger.info(f"Metadata generated: Title: '{metadata.get('seo_title', '')}'")
@@ -408,6 +426,7 @@ Return a JSON object with these fields:
             "metadata": metadata
         }
     }
+
 
 def build_seo_blog_writer() -> StateGraph:
     workflow = StateGraph(BlogState)
@@ -437,6 +456,7 @@ def build_seo_blog_writer() -> StateGraph:
     workflow.set_entry_point("keyword_research")
 
     return workflow
+
 
 # Update the generate_seo_blog function to correctly handle the final state
 
@@ -479,11 +499,12 @@ def generate_seo_blog(topic: str, debug: bool = False) -> Dict[str, Any]:
 
     return result
 
+
 def print_blog_sections(result: Dict[str, Any]) -> None:
     """Pretty-print the blog sections for testing."""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(f"BLOG SECTIONS FOR: {result.get('metadata', {}).get('h1_headline', 'Untitled Blog')}")
-    print("="*80)
+    print("=" * 80)
 
     sections = result.get("sections", {})
     outline = result.get("outline", [])
@@ -496,19 +517,20 @@ def print_blog_sections(result: Dict[str, Any]) -> None:
 
     for i, section in enumerate(outline):
         if i in sections:
-            title = section.get("title", f"Section {i+1}")
-            print(f"\n{'#'*40} SECTION {i+1}: {title} {'#'*40}\n")
+            title = section.get("title", f"Section {i + 1}")
+            print(f"\n{'#' * 40} SECTION {i + 1}: {title} {'#' * 40}\n")
             print(sections[i])
-            print("\n" + "-"*80)
+            print("\n" + "-" * 80)
         else:
-            print(f"\nSECTION {i+1}: {section.get('title', 'Untitled')} - CONTENT MISSING")
+            print(f"\nSECTION {i + 1}: {section.get('title', 'Untitled')} - CONTENT MISSING")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("METADATA:")
     print(f"SEO Title: {result.get('metadata', {}).get('seo_title', 'No title')}")
     print(f"Meta Description: {result.get('metadata', {}).get('meta_description', 'No description')}")
     print(f"H1 Headline: {result.get('metadata', {}).get('h1_headline', 'No headline')}")
-    print("="*80)
+    print("=" * 80)
+
 
 def export_to_html(result: Dict[str, Any], output_path: str = None) -> str:
     """
@@ -604,8 +626,9 @@ def research_topic_with_tavily(state: BlogState) -> BlogState:
                 #     max_results=5
                 # )
 
-                search_results = client.search(query)
-                logger.info(f"  Tavily search results for topics ######################### {search_results} ################################")
+                search_results = client.search(query, search_depth=my_config.tavily.search_depth, max_results=my_config.tavily.max_results)
+                logger.info(
+                    f"  Tavily search results for topics ######################### {search_results} ################################")
                 if "results" in search_results:
                     all_results.extend(search_results["results"])
             except Exception as e:
@@ -665,7 +688,7 @@ Return the information in this JSON format:
 
 Only include information actually mentioned in the research content. Use direct quotes where possible.
 """
-            extraction_response = call_llm(extraction_prompt)
+            extraction_response = call_llm(extraction_prompt, config=my_config)
             extracted_data = extract_json(extraction_response)
 
             # Update structured data with extracted information
@@ -682,7 +705,7 @@ Only include information actually mentioned in the research content. Use direct 
             return research_topic(state)
 
         logger.info(f"Tavily research completed with {total_items} data points and "
-                   f"{len(structured_data.get('sources', []))} sources")
+                    f"{len(structured_data.get('sources', []))} sources")
 
         return {
             **state,
@@ -725,15 +748,17 @@ Provide the following information in JSON format:
 }}
     """
 
-    response = call_llm(prompt)
+    response = call_llm(prompt, config=my_config)
     research = extract_json(response)
 
     logger.info(f"Research completed with {sum(len(v) for v in research.values() if isinstance(v, list))} data points")
 
     return {
         "research": research,
-        "debug_info": {"stage": "research_topic", "status": "success", "research_summary": {k: len(v) for k, v in research.items() if isinstance(v, list)}}
+        "debug_info": {"stage": "research_topic", "status": "success",
+                       "research_summary": {k: len(v) for k, v in research.items() if isinstance(v, list)}}
     }
+
 
 def build_enhanced_seo_blog_writer() -> StateGraph:
     """Build the enhanced version of the SEO blog writer workflow."""
@@ -765,14 +790,18 @@ def build_enhanced_seo_blog_writer() -> StateGraph:
 
     return workflow
 
+
 def generate_enhanced_seo_blog(
     topic: str,
-    language: str = "english",
-    use_tavily: bool = True,
+    language: Optional[str] = None,
+    use_tavily: Optional[bool] = None,
     export_html: bool = True,
-    output_dir: str = None,
-    debug: bool = False
+    output_dir: Optional[str] = None,
+    debug: bool = False,
+    config: Optional[Config] = None
 ) -> Dict[str, Any]:
+    language = language or my_config.blog.language
+    use_tavily = use_tavily if use_tavily is not None else my_config.tavily.enabled
     """
     Generate a complete enhanced SEO-optimized blog post for the given topic.
 
@@ -855,13 +884,13 @@ def generate_enhanced_seo_blog(
 
     return result
 
+
 # Basic usage with all enhancements
 result = generate_enhanced_seo_blog(
-    topic="Machine Learning Applications in Healthcare",
-    language="english",
-    use_tavily=True,
+    topic="France, site industriel clé en main 2030 : Comment en profiter ?",
     export_html=True,
-    output_dir="blog_exports"
+    output_dir="blog_exports",
+    config=my_config  # 💡 Injection propre ici
 )
 
 # Print the HTML export path

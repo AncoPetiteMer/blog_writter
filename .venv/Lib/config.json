@@ -1,0 +1,23 @@
+{
+  "llm": {
+    "model": "gpt-4o-mini",
+    "temperature": 0.7
+  },
+  "tavily": {
+    "enabled": true,
+    "search_depth": "advanced",
+    "max_results": 3
+  },
+  "semrush": {
+    "display_limit": 5,
+    "database": "fr"
+  },
+  "blog": {
+    "language": "french",
+    "word_count": {
+      "min": 300,
+      "max": 600
+    },
+    "html_format": true
+  }
+}
