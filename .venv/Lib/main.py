@@ -21,13 +21,9 @@ os.environ["TAVILY_API_KEY"] = os.getenv('API_KEY_TVLY')
 os.environ["EXA_API_KEY"] = os.getenv('EXA_API_KEY')
 os.environ["SEMRUSH_API_KEY"] = os.getenv('SEMRUSH_API_KEY')
 
-# Enhanced logger
-logger = logging.getLogger("seo_blog")
-logger.setLevel(logging.INFO)
-handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
+# Logger
+from logger_config import get_logger
+logger = get_logger("seo_blog")
 
 # Define our state
 class BlogState(TypedDict):
