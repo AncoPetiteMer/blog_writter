@@ -521,92 +521,51 @@ def export_to_html(result: Dict[str, Any], output_path: str = None) -> str:
     Returns:
         Path to the saved HTML file
     """
-
     blog_content = result.get("blog_content", "")
     metadata = result.get("metadata", {})
+    keywords = result.get("keywords", [])
 
-    # Create a sanitized filename from the title
     title = metadata.get("h1_headline", "blog-post")
     sanitized_title = "".join(c if c.isalnum() else "-" for c in title).lower()
 
-    # Default output path if none provided
     if not output_path:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         output_path = f"{sanitized_title}-{timestamp}.html"
 
-    # Basic HTML template with some CSS styling
-    html_template = f"""<!DOCTYPE html>
-<html lang="en">
+    seo_title = metadata.get("seo_title", title)
+    meta_description = metadata.get("meta_description", "")
+
+    html = f"""<!DOCTYPE html>
+<html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{metadata.get("seo_title", title)}</title>
-    <meta name="description" content="{metadata.get("meta_description", "")}">
-    <style>
-        body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }}
-        h1, h2, h3 {{
-            color: #2c3e50;
-        }}
-        h1 {{
-            font-size: 2.2em;
-            margin-bottom: 0.8em;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 0.3em;
-        }}
-        h2 {{
-            font-size: 1.8em;
-            margin-top: 1.5em;
-        }}
-        h3 {{
-            font-size: 1.3em;
-            margin-top: 1.2em;
-        }}
-        p {{
-            margin-bottom: 1.2em;
-        }}
-        .metadata {{
-            background-color: #f9f9f9;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-size: 0.9em;
-        }}
-        .keywords {{
-            color: #7f8c8d;
-            font-style: italic;
-        }}
-    </style>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{seo_title}</title>
+    <meta name="description" content="{meta_description}" />
 </head>
 <body>
     <div class="metadata">
-        <p><strong>SEO Title:</strong> {metadata.get("seo_title", "")}</p>
-        <p><strong>Meta Description:</strong> {metadata.get("meta_description", "")}</p>
-        <p class="keywords"><strong>Keywords:</strong> {", ".join(result.get("keywords", []))}</p>
+        <p><strong>SEO Title :</strong> {seo_title}</p>
+        <p><strong>Meta Description :</strong> {meta_description}</p>
+        <p><em>Mots-clés :</em> {', '.join(keywords)}</p>
     </div>
 
-    <h1>{metadata.get("h1_headline", title)}</h1>
+    <h1>{title}</h1>
 
     {blog_content}
 
     <footer>
-        <p><small>Generated on {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</small></p>
+        <p><small>Généré le {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small></p>
     </footer>
 </body>
 </html>"""
 
-    # Write the HTML file
     with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html_template)
+        f.write(html)
 
     logger.info(f"Blog exported as HTML to: {output_path}")
     return output_path
+
 
 def research_topic_with_tavily(state: BlogState) -> BlogState:
     """Research the topic using Tavily API and gather relevant information."""
