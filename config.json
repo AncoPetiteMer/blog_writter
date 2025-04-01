@@ -6,7 +6,7 @@
   "tavily": {
     "enabled": true,
     "search_depth": "advanced",
-    "max_results": 3
+    "max_results": 5
   },
   "semrush": {
     "display_limit": 5,
@@ -15,8 +15,8 @@
   "blog": {
     "language": "french",
     "word_count": {
-      "min": 300,
-      "max": 600
+      "min": 500,
+      "max": 700
     },
     "html_format": true
   }

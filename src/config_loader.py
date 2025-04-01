@@ -1,6 +1,5 @@
 import json
-from typing import Optional
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 
 class LLMConfig(BaseModel):
