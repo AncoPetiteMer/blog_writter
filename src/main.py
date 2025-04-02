@@ -9,7 +9,7 @@ from tavily import TavilyClient
 import requests
 from IPython.display import Image, display
 from langgraph.graph import StateGraph, END
-
+import google.generativeai as genai
 from api_keys_config import APIConfig
 from config_loader import Config, load_config
 from logger_config import get_logger
@@ -347,112 +347,116 @@ def should_continue_writing(state: BlogState) -> str:
         return "finalize"
 
 
+def call_gemini(prompt: str, model_name="models/gemini-1.5-pro") -> str:
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    model = genai.GenerativeModel(model_name)
+    response = model.generate_content(prompt)
+    return response.text.strip()
+
 def finalize_blog(state: BlogState) -> BlogState:
-    """Combine all sections and optimize the final blog post."""
-    logger.info("Finalizing blog post")
+    logger.info("🚀 Finalizing blog post with Gemini 1.5 Pro")
 
-    # Save all the section contents for debugging
-    logger.info("Section content details:")
+    # Step 1: Combine all section content
+    combined_content = ""
     for i, section in enumerate(state["outline"]):
-        if i in state["sections_content"]:
-            content_len = len(state["sections_content"][i])
-            logger.info(f"  Section {i + 1}: {section['title']} - {content_len} characters")
-        else:
-            logger.info(f"  Section {i + 1}: {section['title']} - MISSING CONTENT")
-
-    sections_content = state["sections_content"]
-    all_content = ""
-
-    for i in range(len(state["outline"])):
-        if i in sections_content:
-            all_content += sections_content[i] + "\n\n"
-        else:
-            logger.warning(f"Missing content for section {i + 1}")
+        section_text = state["sections_content"].get(i, "").strip()
+        logger.info(f"Section {i+1}: {section['title']} - {len(section_text)} characters")
+        combined_content += section_text + "\n\n"
 
     keywords_str = ", ".join(state["keywords"])
-    logger.info(
-        f"Le contenu finale est: ###############################{all_content} ########################################")
+
+    # Step 2: Create prompt for Gemini finalization
     final_prompt = f"""
-    You are an SEO editor and HTML formatter. Optimize this blog post for readability, SEO, and proper HTML structure.
+    You are a senior SEO blog editor and expert in HTML structure. Your job is to finalize and significantly enrich the following draft blog post.
 
-    Review and optimize this blog post:
+    📌 Requirements:
+    - Final blog **must be between 1,200 and 1,500 words**
+    - This is a long-form article designed for lead generation, SEO, and in-depth reader engagement
 
-    Topic: {state['topic']}
-    Keywords: {keywords_str}
+    ✍️ Content to optimize:
+    {combined_content}
 
-    Content:
-    {all_content}
+    🧠 Your tasks:
+    1. ✅ Structure:
+       - Use semantic HTML5 tags: <h1> for main title, <h2>/<h3> for headings
+       - Use <p>, <ul>, <ol>, <blockquote>, <strong>, <a> and proper <div> containers
+       - Begin with <!DOCTYPE html> and wrap in <html>, <head>, <body> with valid structure
 
-    Your tasks:
-    1. Format the entire blog post with proper HTML, including:
-      - <h1> for the main title
-      - <h2> for section headings
-      - <h3> for subsection headings
-      - <p> for paragraphs
-      - <ul>/<ol> and <li> for lists
-      - <blockquote> for quotes
-      - <strong> for emphasis on important points
-      - <a href="URL">text</a> for links
-      - Add proper <meta> tags in the <head> section for SEO
+    2. ✅ Content enrichment:
+       - Expand **each section** with:
+         - 2 to 3 additional paragraphs
+         - Concrete examples
+         - Real-world applications or case studies
+         - Figures or data points
+         - Sub-bullets when useful
+       - Clarify complex ideas with analogies or definitions
 
-    2. Ensure the HTML structure is clean and semantic with:
-      - Proper indentation
-      - Appropriate <div> containers for sections
-      - <header>, <main>, <footer> structural elements
- 
-    3. Content optimization:
-      - Add a compelling introduction and conclusion if they're not strong enough
-      - Ensure smooth transitions between sections
-      - Naturally incorporate keywords without stuffing
-      - Add a table of contents at the beginning with anchor links
+    3. ✅ Add structural elements:
+       - Table of contents with anchor links
+       - Optimized introduction (150–200 words)
+       - Expanded conclusion (100–200 words) with call-to-action
+       - Author bio, newsletter CTA, related posts, and social sharing buttons in <footer>
 
-    4. Add these finishing touches:
-      - Include an author bio section at the end
-      - Add social sharing buttons HTML
-      - Include "Related Posts" section HTML
-      - Add a call-to-action for newsletter signup or comments
+    4. ✅ SEO enhancements:
+       - Naturally integrate the following keywords: {keywords_str}
+       - Avoid keyword stuffing; favor fluid and helpful writing
+       - Create smooth transitions between sections
 
-    5. Return ONLY the complete HTML document with all formatting included, no explanations.
-      Begin with <!DOCTYPE html> and include all necessary HTML structure.
+    5. ✅ Metadata:
+       - Add <title> and <meta name="description"> in <head>, aligned with the topic
+       - Ensure the <title> is compelling and includes keywords
+    
+    6. 📚 Sources:
+   - Keep all <div class='sources'> or <ol> sections found in the draft content.
+   - At the end of the article, create a single “References” section.
+   - Merge all the <li><a href=...> entries from the sources into one unified list.
+   - Remove duplicates and sort by domain or topic relevance if possible.
+
+
+    ⚠️ Final Instructions:
+    - Ensure the final result contains **at least 1,200 words**. Aim for ~1,500 words.
+    - If needed, revisit earlier sections to deepen explanations and lengthen thoughtfully.
+    - Output **only the full HTML document**, no comments, no explanations.
     """
 
-    final_blog = call_llm(final_prompt, config=my_config)
+    final_html = call_gemini(final_prompt)
 
-    logger.info(f"Final blog post created with {len(final_blog)} characters")
-
-    meta_prompt = f"""
-You are an SEO specialist. Create metadata for a blog post.
-
-Create metadata for the following blog post:
+    # Step 3: Get metadata separately
+    metadata_prompt = f"""
+You're an SEO specialist. Based on this blog topic and keywords, generate optimized metadata:
 
 Topic: {state['topic']}
 Keywords: {keywords_str}
 
-Create these metadata elements:
-1. SEO Title Tag (60-70 characters)
-2. Meta Description (150-160 characters)
-3. H1 Headline (compelling headline for the page)
-
-Return a JSON object with these fields:
+Return as JSON:
 {{
-    "seo_title": "Your SEO title here",
-    "meta_description": "Your meta description here",
-    "h1_headline": "Your H1 headline here"
+  "seo_title": "Your SEO title here",
+  "meta_description": "Your meta description here",
+  "h1_headline": "Your H1 headline here"
 }}
-    """
+"""
 
-    metadata_response = call_llm(meta_prompt, config=my_config)
+    metadata_response = call_gemini(metadata_prompt)
     metadata = extract_json(metadata_response)
 
-    logger.info(f"Metadata generated: Title: '{metadata.get('seo_title', '')}'")
+    logger.info(f"✅ Final blog created with {len(final_html)} characters")
+    logger.info(f"🧠 Metadata: {metadata}")
+    word_count = len(final_html.split())
+    logger.info(f"📏 Final blog contains approximately {word_count} words.")
 
     return {
-        "final_blog": final_blog,
+        "topic": state["topic"],
+        "keywords": state["keywords"],
+        "research": state["research"],
+        "outline": state["outline"],
+        "current_section": state["current_section"],
+        "sections_content": state["sections_content"],
+        "final_blog": final_html,
         "metadata": metadata,
         "debug_info": {
             "stage": "finalize_blog",
-            "status": "success",
-            "blog_length": len(final_blog),
+            "model_used": "gemini-1.5-pro",
+            "blog_length": len(final_html),
             "metadata": metadata
         }
     }
