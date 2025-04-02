@@ -348,7 +348,7 @@ def should_continue_writing(state: BlogState) -> str:
 
 
 def call_gemini(prompt: str, model_name="models/gemini-1.5-pro") -> str:
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    #genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel(model_name)
     response = model.generate_content(prompt)
     return response.text.strip()

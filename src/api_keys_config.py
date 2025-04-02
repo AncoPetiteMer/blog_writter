@@ -8,6 +8,7 @@ class APIConfig:
         self.TAVILY_API_KEY = self._get_key("TAVILY_API_KEY")
         self.EXA_API_KEY = self._get_key("EXA_API_KEY")
         self.SEMRUSH_API_KEY = self._get_key("SEMRUSH_API_KEY")
+        self.GEMINI_API_KEY = self._get_key("GEMINI_API_KEY")
 
     def _get_key(self, key_name: str) -> str:
         value = os.getenv(key_name)
