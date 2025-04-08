@@ -34,6 +34,7 @@ class Config(BaseModel):
     tavily: TavilyConfig
     semrush: SemrushConfig
     blog: BlogConfig
+    topic: str
 
 
 def load_config(path: str = "config.json") -> Config:
