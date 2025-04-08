@@ -83,30 +83,46 @@ def keyword_research(state: BlogState) -> BlogState:
     logger.info(f"Starting keyword research for topic: '{topic}'")
 
     if not topic:
-        return {
-            "topic": "",
-            "keywords": ["no-topic-provided"],
-            "research": {},
-            "outline": [],
-            "current_section": 0,
-            "sections_content": {},
-            "final_blog": "",
-            "metadata": {},
-            "debug_info": {
+        return BlogState(
+            topic="",
+            keywords=["no-topic-provided"],
+            research={},
+            outline=[],
+            current_section=0,
+            sections_content={},
+            final_blog="",
+            metadata={},
+            debug_info={
                 "stage": "keyword_research",
                 "status": "error",
                 "reason": "no-topic"
             }
-        }
+        )
 
     semrush_keywords = []
     try:
+        # Use LLM to reformat the topic for better relevance in SEMrush
+        # Modify the prompt for reformatting to ensure keyword-focused result
+        # Modify the prompt for better keyword generation in SEO context
+        reformatted_topic_prompt = f"""
+        Reformat the topic for SEO purposes. Provide a **single, relevant, unique single-word keyword** that is highly related to the following topic in French:
 
+        Topic: '{topic}'
+
+        This should be a common, SEO-friendly search term people might use when looking for information about industrial sites, investment, and opportunities in France, especially in the context of industrial projects for 2030. Focus on a general single word that best represents industries, investment, and development trends in the context of the topic. Return only **one keyword** without any list wrapping. The keyword should be returned as plain text like this:
+        keyword1
+        """
+
+        reformatted_topic = call_llm(reformatted_topic_prompt, system_prompt="SEO Expert", config=my_config).strip()
+
+        logger.info(f"Reformatted topic for SEMrush: '{reformatted_topic}'")
+
+        # Fetch keywords from SEMrush using the reformatted topic
         semrush_api_key = os.getenv("SEMRUSH_API_KEY")
         params = {
             "type": "phrase_related",
             "key": semrush_api_key,
-            "phrase": topic,
+            "phrase": reformatted_topic,
             "database": my_config.semrush.database,
             "export_columns": "Ph",
             "display_limit": my_config.semrush.display_limit,
@@ -125,6 +141,7 @@ def keyword_research(state: BlogState) -> BlogState:
         logger.error(f"SEMRush API error: {e}", exc_info=True)
 
     try:
+        # Generate additional SEO keywords using LLM
         system_prompt = f"You are an SEO expert. Generate keywords for: {topic}"
         prompt = f"""
         Generate 2-3 relevant SEO keywords for: "{topic}"
@@ -133,43 +150,47 @@ def keyword_research(state: BlogState) -> BlogState:
         """
         llm_response = call_llm(prompt, system_prompt, config=my_config)
         llm_keywords = extract_json(llm_response)
+
+        # Combine the SEMrush and LLM keywords, and limit to the top 5
         combined_keywords = list(set(llm_keywords + semrush_keywords))[:5]
         logger.info(f"Combined keywords: {combined_keywords}")
-        return {
-            "topic": state["topic"],
-            "keywords": combined_keywords,
-            "research": state.get("research", {}),
-            "outline": state.get("outline", []),
-            "current_section": state.get("current_section", 0),
-            "sections_content": state.get("sections_content", {}),
-            "final_blog": state.get("final_blog", ""),
-            "metadata": state.get("metadata", {}),
-            "debug_info": {
+
+        return BlogState(
+            topic=state["topic"],
+            keywords=combined_keywords,
+            research=state.get("research", {}),
+            outline=state.get("outline", []),
+            current_section=state.get("current_section", 0),
+            sections_content=state.get("sections_content", {}),
+            final_blog=state.get("final_blog", ""),
+            metadata=state.get("metadata", {}),
+            debug_info={
                 "stage": "keyword_research",
                 "status": "success",
                 "keywords": combined_keywords
             }
-        }
-
+        )
 
     except Exception as e:
         logger.error(f"LLM error: {str(e)}", exc_info=True)
+        # Fallback to default keywords if LLM fails
         fallback_keywords = semrush_keywords or [f"{topic} best practices", f"{topic} guide", f"{topic} tips"]
-        return {
-            "topic": state["topic"],
-            "keywords": fallback_keywords,
-            "research": state.get("research", {}),
-            "outline": state.get("outline", []),
-            "current_section": state.get("current_section", 0),
-            "sections_content": state.get("sections_content", {}),
-            "final_blog": state.get("final_blog", ""),
-            "metadata": state.get("metadata", {}),
-            "debug_info": {
+
+        return BlogState(
+            topic=state["topic"],
+            keywords=fallback_keywords,
+            research=state.get("research", {}),
+            outline=state.get("outline", []),
+            current_section=state.get("current_section", 0),
+            sections_content=state.get("sections_content", {}),
+            final_blog=state.get("final_blog", ""),
+            metadata=state.get("metadata", {}),
+            debug_info={
                 "stage": "keyword_research",
                 "status": "fallback",
                 "keywords": fallback_keywords
             }
-        }
+        )
 
 
 def create_outline(state: BlogState) -> BlogState:
@@ -213,22 +234,21 @@ Return a JSON array of objects with this format:
         subsections = ", ".join(section.get("subsections", []))
         logger.info(f"  Section {i + 1}: {section['title']} - Subsections: {subsections if subsections else 'None'}")
 
-    return {
-        "topic": state["topic"],
-        "keywords": state["keywords"],
-        "research": state["research"],
-        "outline": outline,
-        "current_section": 0,
-        "sections_content": {},
-        "final_blog": state.get("final_blog", ""),
-        "metadata": state.get("metadata", {}),
-        "debug_info": {
+    return BlogState(
+        topic=state["topic"],
+        keywords=state["keywords"],
+        research=state["research"],
+        outline=outline,
+        current_section=0,
+        sections_content={},
+        final_blog=state.get("final_blog", ""),
+        metadata=state.get("metadata", {}),
+        debug_info={
             "stage": "create_outline",
             "status": "success",
             "outline_summary": [section["title"] for section in outline]
         }
-    }
-
+    )
 
 
 def write_section(state: BlogState) -> BlogState:
@@ -314,16 +334,16 @@ def write_section(state: BlogState) -> BlogState:
     sections_content = state["sections_content"].copy()
     sections_content[current_section] = section_content
 
-    return {
-        "topic": state["topic"],
-        "keywords": state["keywords"],
-        "research": state["research"],
-        "outline": state["outline"],
-        "current_section": current_section + 1,
-        "sections_content": sections_content,
-        "final_blog": state.get("final_blog", ""),
-        "metadata": state.get("metadata", {}),
-        "debug_info": {
+    return BlogState(
+        topic=state["topic"],
+        keywords=state["keywords"],
+        research=state["research"],
+        outline=state["outline"],
+        current_section=current_section + 1,
+        sections_content=sections_content,
+        final_blog=state.get("final_blog", ""),
+        metadata=state.get("metadata", {}),
+        debug_info={
             "stage": "write_section",
             "status": "success",
             "section": current_section,
@@ -331,7 +351,7 @@ def write_section(state: BlogState) -> BlogState:
             "content_length": len(section_content),
             "sources_count": len(sources)
         }
-    }
+    )
 
 
 def should_continue_writing(state: BlogState) -> str:
@@ -444,22 +464,22 @@ Return as JSON:
     word_count = len(final_html.split())
     logger.info(f"📏 Final blog contains approximately {word_count} words.")
 
-    return {
-        "topic": state["topic"],
-        "keywords": state["keywords"],
-        "research": state["research"],
-        "outline": state["outline"],
-        "current_section": state["current_section"],
-        "sections_content": state["sections_content"],
-        "final_blog": final_html,
-        "metadata": metadata,
-        "debug_info": {
+    return BlogState(
+        topic=state["topic"],
+        keywords=state["keywords"],
+        research=state["research"],
+        outline=state["outline"],
+        current_section=state["current_section"],
+        sections_content=state["sections_content"],
+        final_blog=final_html,
+        metadata=metadata,
+        debug_info={
             "stage": "finalize_blog",
             "model_used": "gemini-1.5-pro",
             "blog_length": len(final_html),
             "metadata": metadata
         }
-    }
+    )
 
 
 def build_seo_blog_writer() -> StateGraph:
@@ -606,8 +626,6 @@ def export_to_html(result: Dict[str, Any], output_path: str = None) -> str:
         <p><em>Mots-clés :</em> {', '.join(keywords)}</p>
     </div>
 
-    <h1>{title}</h1>
-
     {blog_content}
 
     <footer>
@@ -740,19 +758,25 @@ Only include information actually mentioned in the research content. Use direct 
         logger.info(f"Tavily research completed with {total_items} data points and "
                     f"{len(structured_data.get('sources', []))} sources")
 
-        return {
-            **state,
-            "research": structured_data,
-            "debug_info": {
+        return BlogState(
+            topic=state["topic"],
+            keywords=state["keywords"],
+            research=structured_data,
+            outline=state["outline"],
+            current_section=state["current_section"],
+            sections_content=state["sections_content"],
+            final_blog=state["final_blog"],
+            metadata=state["metadata"],
+            debug_info={
                 "stage": "research_topic_with_tavily",
                 "status": "success",
                 "research_summary": {
-                    k: len(v) for k, v in structured_data.items()
-                    if isinstance(v, list)
+                    k: len(v) for k, v in structured_data.items() if isinstance(v, list)
                 },
                 "sources_count": len(structured_data.get("sources", []))
             }
-        }
+        )
+
 
     except Exception as e:
         logger.error(f"Tavily research error: {str(e)}")
@@ -786,11 +810,23 @@ Provide the following information in JSON format:
 
     logger.info(f"Research completed with {sum(len(v) for v in research.values() if isinstance(v, list))} data points")
 
-    return {
-        "research": research,
-        "debug_info": {"stage": "research_topic", "status": "success",
-                       "research_summary": {k: len(v) for k, v in research.items() if isinstance(v, list)}}
-    }
+    return BlogState(
+        topic=state["topic"],
+        keywords=state["keywords"],
+        research=research,
+        outline=state["outline"],
+        current_section=state["current_section"],
+        sections_content=state["sections_content"],
+        final_blog=state["final_blog"],
+        metadata=state["metadata"],
+        debug_info={
+            "stage": "research_topic",
+            "status": "success",
+            "research_summary": {
+                k: len(v) for k, v in research.items() if isinstance(v, list)
+            }
+        }
+    )
 
 
 def build_enhanced_seo_blog_writer() -> StateGraph:
@@ -918,11 +954,11 @@ def generate_enhanced_seo_blog(
 
 
 # Initialize logger
-topic = "France, site industriel clé en main 2030 : Comment en profiter ?"
+
 my_config = load_config()
 language = getattr(my_config.blog, "language", "fr")
 logger = get_logger("seo_blog")
-log_startup_context(logger, topic, language, my_config)
+log_startup_context(logger, my_config.topic, language, my_config)
 logger.info("⚙️ Blog configuration loaded successfully.")
 
 
@@ -930,14 +966,15 @@ logger.info("⚙️ Blog configuration loaded successfully.")
 config = APIConfig()
 logger.info("✅ API keys loaded successfully.")
 logger.info(f"🔑 OpenAI key starts with: {config.OPENAI_API_KEY[:5]}...")
+logger.info(f"🔑 Gemini key starts with: {config.GOOGLE_API_KEY[:5]}...")
 
 # Load blog configuration
 
 # Generate enhanced SEO content
-logger.info(f"📝 Generating blog post for topic: \"{topic}\"")
+logger.info(f"📝 Generating blog post for topic: \"{my_config.topic}\"")
 
 result = generate_enhanced_seo_blog(
-    topic=topic,
+    topic=my_config.topic,
     export_html=True,
     output_dir="../blog_exports",
     config=my_config  # 💡 Centralized config injection
